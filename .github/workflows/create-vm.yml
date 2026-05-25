@@ -184,7 +184,7 @@ jobs:
               --lifecycle-state AVAILABLE \
               --sort-by TIMECREATED \
               --sort-order DESC \
-              --query "data[0].id" \
+              --query "data[?contains(\"display-name\", 'aarch64') || contains(\"display-name\", 'arm') || contains(\"display-name\", 'ARM')].id | [0]" \
               --raw-output \
               > "$RUNNER_TEMP/image-id.txt" \
               2>> "$RUNNER_TEMP/oci-error.log"; then
