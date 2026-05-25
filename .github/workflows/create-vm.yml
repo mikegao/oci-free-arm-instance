@@ -15,7 +15,7 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  SUPPRESS_LABEL_WARNING: true
+  OCI_CLI_SUPPRESS_FILE_PERMISSIONS_WARNING: true
 
 jobs:
   create-vm:
@@ -34,39 +34,91 @@ jobs:
         id: create_vm
         continue-on-error: true
         shell: bash
+        env:
+          OCI_CLI_REGION: ${{ secrets.OCI_CLI_REGION }}
+          OCI_CLI_USER: ${{ secrets.OCI_CLI_USER }}
+          OCI_CLI_TENANCY: ${{ secrets.OCI_CLI_TENANCY }}
+          OCI_CLI_FINGERPRINT: ${{ secrets.OCI_CLI_FINGERPRINT }}
+          OCI_CLI_KEY_CONTENT: ${{ secrets.OCI_CLI_KEY_CONTENT }}
+          OCI_COMPARTMENT_ID: ${{ secrets.OCI_COMPARTMENT_ID }}
+          AD_NAME: ${{ secrets.AD_NAME }}
+          OCI_SUBNET_ID: ${{ secrets.OCI_SUBNET_ID }}
+          IMAGE_ID: ${{ secrets.IMAGE_ID }}
+          SSH_PUBLIC_KEY: ${{ secrets.SSH_PUBLIC_KEY }}
         run: |
           set -o pipefail
 
           pip install oci-cli
 
+          required_vars=(
+            OCI_CLI_REGION
+            OCI_CLI_USER
+            OCI_CLI_TENANCY
+            OCI_CLI_FINGERPRINT
+            OCI_CLI_KEY_CONTENT
+            OCI_COMPARTMENT_ID
+            AD_NAME
+            OCI_SUBNET_ID
+            IMAGE_ID
+            SSH_PUBLIC_KEY
+          )
+
+          for var_name in "${required_vars[@]}"; do
+            if [ -z "${!var_name}" ]; then
+              echo "Missing required secret: ${var_name}" > "$RUNNER_TEMP/oci-error.log"
+              exit 1
+            fi
+          done
+
           mkdir -p "$HOME/.oci"
-          printf '%s\n' "${{ secrets.OCI_CLI_KEY_CONTENT }}" > "$HOME/.oci/oci_api_key.pem"
+          chmod 700 "$HOME/.oci"
+          printf '%s\n' "$OCI_CLI_KEY_CONTENT" > "$HOME/.oci/oci_api_key.pem"
           chmod 600 "$HOME/.oci/oci_api_key.pem"
 
-          cat > "$HOME/.oci/config" <<EOF
-          [DEFAULT]
-          user=${{ secrets.OCI_CLI_USER }}
-          tenancy=${{ secrets.OCI_CLI_TENANCY }}
-          fingerprint=${{ secrets.OCI_CLI_FINGERPRINT }}
-          key_file=$HOME/.oci/oci_api_key.pem
-          region=${{ secrets.OCI_CLI_REGION }}
-          EOF
+          {
+            printf '[DEFAULT]\n'
+            printf 'user=%s\n' "$OCI_CLI_USER"
+            printf 'tenancy=%s\n' "$OCI_CLI_TENANCY"
+            printf 'fingerprint=%s\n' "$OCI_CLI_FINGERPRINT"
+            printf 'key_file=%s/.oci/oci_api_key.pem\n' "$HOME"
+            printf 'region=%s\n' "$OCI_CLI_REGION"
+          } > "$HOME/.oci/config"
+          chmod 600 "$HOME/.oci/config"
 
-          printf '%s\n' "${{ secrets.SSH_PUBLIC_KEY }}" > "$HOME/my_ssh_key.pub"
+          printf '%s\n' "$SSH_PUBLIC_KEY" > "$HOME/my_ssh_key.pub"
 
-          oci compute instance launch \
-            --compartment-id "${{ secrets.OCI_COMPARTMENT_ID }}" \
-            --availability-domain "${{ secrets.AD_NAME }}" \
-            --shape "VM.Standard.A1.Flex" \
-            --shape-config '{"ocpus":2,"memoryInGBs":12}' \
-            --subnet-id "${{ secrets.OCI_SUBNET_ID }}" \
-            --image-id "${{ secrets.IMAGE_ID }}" \
-            --ssh-authorized-keys-file "$HOME/my_ssh_key.pub" \
-            --assign-public-ip true \
-            --display-name "coolify-vm" \
-            --boot-volume-size-in-gbs 50 \
-            > "$RUNNER_TEMP/oci-output.json" \
-            2> "$RUNNER_TEMP/oci-error.log"
+          for attempt in 1 2 3; do
+            echo "OCI launch attempt ${attempt}" > "$RUNNER_TEMP/oci-error.log"
+
+            oci compute instance launch \
+              --compartment-id "$OCI_COMPARTMENT_ID" \
+              --availability-domain "$AD_NAME" \
+              --shape "VM.Standard.A1.Flex" \
+              --shape-config '{"ocpus":2,"memoryInGBs":12}' \
+              --subnet-id "$OCI_SUBNET_ID" \
+              --image-id "$IMAGE_ID" \
+              --ssh-authorized-keys-file "$HOME/my_ssh_key.pub" \
+              --assign-public-ip true \
+              --display-name "coolify-vm" \
+              --boot-volume-size-in-gbs 50 \
+              --connection-timeout 30 \
+              --read-timeout 60 \
+              > "$RUNNER_TEMP/oci-output.json" \
+              2>> "$RUNNER_TEMP/oci-error.log"
+
+            exit_code=$?
+            if [ "$exit_code" -eq 0 ]; then
+              exit 0
+            fi
+
+            if ! grep -q 'timed out' "$RUNNER_TEMP/oci-error.log"; then
+              exit "$exit_code"
+            fi
+
+            sleep 20
+          done
+
+          exit "$exit_code"
 
       - name: Capture OCI output
         if: always()
