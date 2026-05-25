@@ -150,26 +150,8 @@ jobs:
           } > "$RUNNER_TEMP/oci-error.log"
 
           if [ -n "$IMAGE_ID" ]; then
-            if ! grep -Eq "^ocid1\\.image\\.oc1\\.${OCID_REGION_KEY}\\." <<< "$IMAGE_ID"; then
-              {
-                echo "Ignoring IMAGE_ID because it does not match the selected OCI region."
-                echo "Expected image OCID prefix: ocid1.image.oc1.${OCID_REGION_KEY}."
-              } >> "$RUNNER_TEMP/oci-error.log"
-              IMAGE_ID=""
-            elif ! oci \
-              --config-file "$HOME/.oci/config" \
-              --profile DEFAULT \
-              --region "$OCI_CLI_REGION" \
-              compute image get \
-              --image-id "$IMAGE_ID" \
-              > "$RUNNER_TEMP/image.json" \
-              2>> "$RUNNER_TEMP/oci-error.log"; then
-              {
-                echo ""
-                echo "Ignoring IMAGE_ID because it is not accessible in the selected region or tenancy."
-              } >> "$RUNNER_TEMP/oci-error.log"
-              IMAGE_ID=""
-            fi
+            echo "Ignoring configured IMAGE_ID; auto-selecting an Arm-compatible Ubuntu image." >> "$RUNNER_TEMP/oci-error.log"
+            IMAGE_ID=""
           fi
 
           if [ -z "$IMAGE_ID" ]; then
