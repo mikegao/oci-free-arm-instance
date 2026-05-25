@@ -61,7 +61,6 @@ jobs:
             OCI_COMPARTMENT_ID
             AD_NAME
             OCI_SUBNET_ID
-            IMAGE_ID
             SSH_PUBLIC_KEY
           )
 
@@ -125,14 +124,6 @@ jobs:
             exit 1
           fi
 
-          if ! grep -Eq "^ocid1\\.image\\.oc1\\.${OCID_REGION_KEY}\\." <<< "$IMAGE_ID"; then
-            {
-              echo "IMAGE_ID does not match the selected OCI region."
-              echo "Expected image OCID prefix: ocid1.image.oc1.${OCID_REGION_KEY}."
-            } > "$RUNNER_TEMP/oci-error.log"
-            exit 1
-          fi
-
           mkdir -p "$HOME/.oci"
           chmod 700 "$HOME/.oci"
           printf '%s\n' "$OCI_CLI_KEY_CONTENT" > "$HOME/.oci/oci_api_key.pem"
@@ -158,20 +149,64 @@ jobs:
             echo "Compute endpoint: ${COMPUTE_ENDPOINT}"
           } > "$RUNNER_TEMP/oci-error.log"
 
-          if ! oci \
-            --config-file "$HOME/.oci/config" \
-            --profile DEFAULT \
-            --region "$OCI_CLI_REGION" \
-            compute image get \
-            --image-id "$IMAGE_ID" \
-            > "$RUNNER_TEMP/image.json" \
-            2>> "$RUNNER_TEMP/oci-error.log"; then
+          if [ -n "$IMAGE_ID" ]; then
+            if ! grep -Eq "^ocid1\\.image\\.oc1\\.${OCID_REGION_KEY}\\." <<< "$IMAGE_ID"; then
+              {
+                echo "Ignoring IMAGE_ID because it does not match the selected OCI region."
+                echo "Expected image OCID prefix: ocid1.image.oc1.${OCID_REGION_KEY}."
+              } >> "$RUNNER_TEMP/oci-error.log"
+              IMAGE_ID=""
+            elif ! oci \
+              --config-file "$HOME/.oci/config" \
+              --profile DEFAULT \
+              --region "$OCI_CLI_REGION" \
+              compute image get \
+              --image-id "$IMAGE_ID" \
+              > "$RUNNER_TEMP/image.json" \
+              2>> "$RUNNER_TEMP/oci-error.log"; then
+              {
+                echo ""
+                echo "Ignoring IMAGE_ID because it is not accessible in the selected region or tenancy."
+              } >> "$RUNNER_TEMP/oci-error.log"
+              IMAGE_ID=""
+            fi
+          fi
+
+          if [ -z "$IMAGE_ID" ]; then
+            if ! oci \
+              --config-file "$HOME/.oci/config" \
+              --profile DEFAULT \
+              --region "$OCI_CLI_REGION" \
+              compute image list \
+              --compartment-id "$OCI_COMPARTMENT_ID" \
+              --shape "VM.Standard.A1.Flex" \
+              --operating-system "Canonical Ubuntu" \
+              --lifecycle-state AVAILABLE \
+              --sort-by TIMECREATED \
+              --sort-order DESC \
+              --query "data[0].id" \
+              --raw-output \
+              > "$RUNNER_TEMP/image-id.txt" \
+              2>> "$RUNNER_TEMP/oci-error.log"; then
+              {
+                echo ""
+                echo "Could not auto-select a Canonical Ubuntu AArch64 image."
+              } >> "$RUNNER_TEMP/oci-error.log"
+              exit 1
+            fi
+
+            IMAGE_ID="$(cat "$RUNNER_TEMP/image-id.txt")"
+          fi
+
+          if [ -z "$IMAGE_ID" ] || [ "$IMAGE_ID" = "null" ]; then
             {
               echo ""
-              echo "IMAGE_ID is not accessible in the selected region or tenancy."
+              echo "No compatible Canonical Ubuntu image was found for VM.Standard.A1.Flex."
             } >> "$RUNNER_TEMP/oci-error.log"
             exit 1
           fi
+
+          echo "Using image: ${IMAGE_ID}" >> "$RUNNER_TEMP/oci-error.log"
 
           if ! oci \
             --config-file "$HOME/.oci/config" \
