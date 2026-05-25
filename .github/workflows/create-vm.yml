@@ -153,6 +153,67 @@ jobs:
 
           printf '%s\n' "$SSH_PUBLIC_KEY" > "$HOME/my_ssh_key.pub"
 
+          {
+            echo "Preflight checks"
+            echo "Compute endpoint: ${COMPUTE_ENDPOINT}"
+          } > "$RUNNER_TEMP/oci-error.log"
+
+          if ! oci \
+            --config-file "$HOME/.oci/config" \
+            --profile DEFAULT \
+            --region "$OCI_CLI_REGION" \
+            compute image get \
+            --image-id "$IMAGE_ID" \
+            > "$RUNNER_TEMP/image.json" \
+            2>> "$RUNNER_TEMP/oci-error.log"; then
+            {
+              echo ""
+              echo "IMAGE_ID is not accessible in the selected region or tenancy."
+            } >> "$RUNNER_TEMP/oci-error.log"
+            exit 1
+          fi
+
+          if ! oci \
+            --config-file "$HOME/.oci/config" \
+            --profile DEFAULT \
+            --region "$OCI_CLI_REGION" \
+            network subnet get \
+            --subnet-id "$OCI_SUBNET_ID" \
+            > "$RUNNER_TEMP/subnet.json" \
+            2>> "$RUNNER_TEMP/oci-error.log"; then
+            {
+              echo ""
+              echo "OCI_SUBNET_ID is not accessible in the selected region, tenancy, or compartment."
+            } >> "$RUNNER_TEMP/oci-error.log"
+            exit 1
+          fi
+
+          if ! oci \
+            --config-file "$HOME/.oci/config" \
+            --profile DEFAULT \
+            --region "$OCI_CLI_REGION" \
+            iam availability-domain list \
+            --compartment-id "$OCI_CLI_TENANCY" \
+            --query "data[?name=='${AD_NAME}'].name | [0]" \
+            --raw-output \
+            > "$RUNNER_TEMP/ad.txt" \
+            2>> "$RUNNER_TEMP/oci-error.log"; then
+            {
+              echo ""
+              echo "Could not list availability domains for the tenancy."
+            } >> "$RUNNER_TEMP/oci-error.log"
+            exit 1
+          fi
+
+          if [ "$(cat "$RUNNER_TEMP/ad.txt")" != "$AD_NAME" ]; then
+            {
+              echo ""
+              echo "AD_NAME is not valid for the selected tenancy and region."
+              echo "Expected one of the names returned by: oci iam availability-domain list"
+            } >> "$RUNNER_TEMP/oci-error.log"
+            exit 1
+          fi
+
           for attempt in 1 2 3; do
             {
               echo "OCI launch attempt ${attempt}"
