@@ -94,7 +94,20 @@ jobs:
           fi
 
           COMPUTE_ENDPOINT="https://iaas.${OCI_CLI_REGION}.oraclecloud.com/20160918"
-          REGION_KEY="$(printf '%s' "$OCI_CLI_REGION" | sed -E 's/^([a-z]+)-([a-z]+)-([0-9]+)$/\1.\2.\3/')"
+          case "$OCI_CLI_REGION" in
+            us-phoenix-1)
+              OCID_REGION_KEY="phx"
+              ;;
+            us-ashburn-1)
+              OCID_REGION_KEY="iad"
+              ;;
+            us-sanjose-1)
+              OCID_REGION_KEY="sjc"
+              ;;
+            *)
+              OCID_REGION_KEY="$(printf '%s' "$OCI_CLI_REGION" | sed -E 's/^([a-z]+)-([a-z]+)-([0-9]+)$/\1-\2-\3/')"
+              ;;
+          esac
 
           if ! grep -Eq '^[[:alnum:]]+:[[:upper:][:digit:]-]+-AD-[[:digit:]]+$' <<< "$AD_NAME"; then
             {
@@ -104,18 +117,18 @@ jobs:
             exit 1
           fi
 
-          if ! grep -Eq "^ocid1\\.subnet\\.oc1\\.${REGION_KEY}\\." <<< "$OCI_SUBNET_ID"; then
+          if ! grep -Eq "^ocid1\\.subnet\\.oc1\\.${OCID_REGION_KEY}\\." <<< "$OCI_SUBNET_ID"; then
             {
               echo "OCI_SUBNET_ID does not match the selected OCI region."
-              echo "Expected subnet OCID prefix: ocid1.subnet.oc1.${REGION_KEY}."
+              echo "Expected subnet OCID prefix: ocid1.subnet.oc1.${OCID_REGION_KEY}."
             } > "$RUNNER_TEMP/oci-error.log"
             exit 1
           fi
 
-          if ! grep -Eq "^ocid1\\.image\\.oc1\\.${REGION_KEY}\\." <<< "$IMAGE_ID"; then
+          if ! grep -Eq "^ocid1\\.image\\.oc1\\.${OCID_REGION_KEY}\\." <<< "$IMAGE_ID"; then
             {
               echo "IMAGE_ID does not match the selected OCI region."
-              echo "Expected image OCID prefix: ocid1.image.oc1.${REGION_KEY}."
+              echo "Expected image OCID prefix: ocid1.image.oc1.${OCID_REGION_KEY}."
             } > "$RUNNER_TEMP/oci-error.log"
             exit 1
           fi
