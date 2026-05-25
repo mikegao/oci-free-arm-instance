@@ -15,7 +15,8 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  OCI_CLI_SUPPRESS_FILE_PERMISSIONS_WARNING: true
+  OCI_CLI_SUPPRESS_FILE_PERMISSIONS_WARNING: "True"
+  SUPPRESS_LABEL_WARNING: "True"
 
 jobs:
   create-vm:
@@ -73,6 +74,9 @@ jobs:
           mkdir -p "$HOME/.oci"
           chmod 700 "$HOME/.oci"
           printf '%s\n' "$OCI_CLI_KEY_CONTENT" > "$HOME/.oci/oci_api_key.pem"
+          if ! tail -n 1 "$HOME/.oci/oci_api_key.pem" | grep -qx 'OCI_API_KEY'; then
+            printf 'OCI_API_KEY\n' >> "$HOME/.oci/oci_api_key.pem"
+          fi
           chmod 600 "$HOME/.oci/oci_api_key.pem"
 
           {
@@ -90,7 +94,13 @@ jobs:
           for attempt in 1 2 3; do
             echo "OCI launch attempt ${attempt}" > "$RUNNER_TEMP/oci-error.log"
 
-            oci compute instance launch \
+            oci \
+              --config-file "$HOME/.oci/config" \
+              --profile DEFAULT \
+              --region "$OCI_CLI_REGION" \
+              --connection-timeout 30 \
+              --read-timeout 60 \
+              compute instance launch \
               --compartment-id "$OCI_COMPARTMENT_ID" \
               --availability-domain "$AD_NAME" \
               --shape "VM.Standard.A1.Flex" \
@@ -101,8 +111,6 @@ jobs:
               --assign-public-ip true \
               --display-name "luckyowl-vm" \
               --boot-volume-size-in-gbs 200 \
-              --connection-timeout 30 \
-              --read-timeout 60 \
               > "$RUNNER_TEMP/oci-output.json" \
               2>> "$RUNNER_TEMP/oci-error.log"
 
