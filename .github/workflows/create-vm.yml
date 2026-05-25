@@ -17,6 +17,7 @@ concurrency:
 env:
   OCI_CLI_SUPPRESS_FILE_PERMISSIONS_WARNING: "True"
   SUPPRESS_LABEL_WARNING: "True"
+  PYTHONWARNINGS: "ignore::FutureWarning"
 
 jobs:
   create-vm:
@@ -71,6 +72,9 @@ jobs:
             fi
           done
 
+          OCI_CLI_REGION="$(printf '%s' "$OCI_CLI_REGION" | tr -d '[:space:]')"
+          COMPUTE_ENDPOINT="https://iaas.${OCI_CLI_REGION}.oraclecloud.com/20160918"
+
           mkdir -p "$HOME/.oci"
           chmod 700 "$HOME/.oci"
           printf '%s\n' "$OCI_CLI_KEY_CONTENT" > "$HOME/.oci/oci_api_key.pem"
@@ -92,12 +96,17 @@ jobs:
           printf '%s\n' "$SSH_PUBLIC_KEY" > "$HOME/my_ssh_key.pub"
 
           for attempt in 1 2 3; do
-            echo "OCI launch attempt ${attempt}" > "$RUNNER_TEMP/oci-error.log"
+            {
+              echo "OCI launch attempt ${attempt}"
+              echo "Compute endpoint: ${COMPUTE_ENDPOINT}"
+              curl --connect-timeout 10 --max-time 20 --silent --show-error --head "$COMPUTE_ENDPOINT" || true
+            } > "$RUNNER_TEMP/oci-error.log"
 
             oci \
               --config-file "$HOME/.oci/config" \
               --profile DEFAULT \
               --region "$OCI_CLI_REGION" \
+              --endpoint "$COMPUTE_ENDPOINT" \
               --connection-timeout 30 \
               --read-timeout 60 \
               compute instance launch \
