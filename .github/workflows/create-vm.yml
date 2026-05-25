@@ -106,7 +106,7 @@ jobs:
 
           if ! grep -Eq "^ocid1\\.subnet\\.oc1\\.${REGION_KEY}\\." <<< "$OCI_SUBNET_ID"; then
             {
-              echo "OCI_SUBNET_ID does not match region ${OCI_CLI_REGION}."
+              echo "OCI_SUBNET_ID does not match the selected OCI region."
               echo "Expected subnet OCID prefix: ocid1.subnet.oc1.${REGION_KEY}."
             } > "$RUNNER_TEMP/oci-error.log"
             exit 1
@@ -114,7 +114,7 @@ jobs:
 
           if ! grep -Eq "^ocid1\\.image\\.oc1\\.${REGION_KEY}\\." <<< "$IMAGE_ID"; then
             {
-              echo "IMAGE_ID does not match region ${OCI_CLI_REGION}."
+              echo "IMAGE_ID does not match the selected OCI region."
               echo "Expected image OCID prefix: ocid1.image.oc1.${REGION_KEY}."
             } > "$RUNNER_TEMP/oci-error.log"
             exit 1
