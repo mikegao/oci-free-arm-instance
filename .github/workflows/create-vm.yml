@@ -126,7 +126,6 @@ jobs:
               --config-file "$HOME/.oci/config" \
               --profile DEFAULT \
               --region "$OCI_CLI_REGION" \
-              --endpoint "$COMPUTE_ENDPOINT" \
               --connection-timeout 30 \
               --read-timeout 60 \
               compute instance launch \
