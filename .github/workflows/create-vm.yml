@@ -94,13 +94,13 @@ jobs:
               --compartment-id "$OCI_COMPARTMENT_ID" \
               --availability-domain "$AD_NAME" \
               --shape "VM.Standard.A1.Flex" \
-              --shape-config '{"ocpus":2,"memoryInGBs":12}' \
+              --shape-config '{"ocpus":4,"memoryInGBs":24}' \
               --subnet-id "$OCI_SUBNET_ID" \
               --image-id "$IMAGE_ID" \
               --ssh-authorized-keys-file "$HOME/my_ssh_key.pub" \
               --assign-public-ip true \
-              --display-name "coolify-vm" \
-              --boot-volume-size-in-gbs 50 \
+              --display-name "luckyowl-vm" \
+              --boot-volume-size-in-gbs 200 \
               --connection-timeout 30 \
               --read-timeout 60 \
               > "$RUNNER_TEMP/oci-output.json" \
