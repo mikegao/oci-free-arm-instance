@@ -1,0 +1,115 @@
+name: Try to Create OCI VM
+
+on:
+  schedule:
+    - cron: "*/10 * * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: create-oci-vm
+  cancel-in-progress: false
+
+env:
+  SUPPRESS_LABEL_WARNING: true
+
+jobs:
+  create-vm:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Cache OCI CLI
+        uses: actions/cache@v4
+        with:
+          path: ~/.local
+          key: ${{ runner.os }}-pip-oci-cli-v1
+
+      - name: Add OCI CLI to PATH
+        run: echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      - name: Try to create VM
+        id: create_vm
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -o pipefail
+
+          pip install oci-cli
+
+          mkdir -p "$HOME/.oci"
+          printf '%s\n' "${{ secrets.OCI_CLI_KEY_CONTENT }}" > "$HOME/.oci/oci_api_key.pem"
+          chmod 600 "$HOME/.oci/oci_api_key.pem"
+
+          cat > "$HOME/.oci/config" <<EOF
+          [DEFAULT]
+          user=${{ secrets.OCI_CLI_USER }}
+          tenancy=${{ secrets.OCI_CLI_TENANCY }}
+          fingerprint=${{ secrets.OCI_CLI_FINGERPRINT }}
+          key_file=$HOME/.oci/oci_api_key.pem
+          region=${{ secrets.OCI_CLI_REGION }}
+          EOF
+
+          printf '%s\n' "${{ secrets.SSH_PUBLIC_KEY }}" > "$HOME/my_ssh_key.pub"
+
+          oci compute instance launch \
+            --compartment-id "${{ secrets.OCI_COMPARTMENT_ID }}" \
+            --availability-domain "${{ secrets.AD_NAME }}" \
+            --shape "VM.Standard.A1.Flex" \
+            --shape-config '{"ocpus":2,"memoryInGBs":12}' \
+            --subnet-id "${{ secrets.OCI_SUBNET_ID }}" \
+            --image-id "${{ secrets.IMAGE_ID }}" \
+            --ssh-authorized-keys-file "$HOME/my_ssh_key.pub" \
+            --assign-public-ip true \
+            --display-name "coolify-vm" \
+            --boot-volume-size-in-gbs 50 \
+            > "$RUNNER_TEMP/oci-output.json" \
+            2> "$RUNNER_TEMP/oci-error.log"
+
+      - name: Capture OCI output
+        if: always()
+        id: oci_output
+        shell: bash
+        run: |
+          {
+            echo "log_data<<EOF"
+            if [ -s "$RUNNER_TEMP/oci-output.json" ]; then
+              cat "$RUNNER_TEMP/oci-output.json"
+            fi
+            if [ -s "$RUNNER_TEMP/oci-error.log" ]; then
+              cat "$RUNNER_TEMP/oci-error.log"
+            fi
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Evaluate result
+        if: always()
+        shell: bash
+        env:
+          LOG_DATA: ${{ steps.oci_output.outputs.log_data }}
+        run: |
+          if grep -q '"lifecycle-state": "PROVISIONING"' <<< "$LOG_DATA"; then
+            echo "VM is being created. Disable this workflow after confirming the VM exists."
+            exit 0
+          fi
+
+          if grep -q 'Out of host capacity' <<< "$LOG_DATA"; then
+            echo "OCI has no Arm capacity right now. The scheduled workflow will retry."
+            exit 0
+          fi
+
+          echo "$LOG_DATA"
+          exit 1
+
+      - name: Send Discord notification
+        if: always()
+        uses: sarisia/actions-status-discord@v1.15.4
+        with:
+          webhook: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          color: ${{ contains(steps.oci_output.outputs.log_data, 'PROVISIONING') && '0x28a745' || contains(steps.oci_output.outputs.log_data, 'Out of host capacity') && '0xffa500' || '0xdc3545' }}
+          title: OCI Bot Status
+          description: |
+            **Result:**
+            ${{ contains(steps.oci_output.outputs.log_data, 'PROVISIONING') && 'VM created. Disable this workflow.' || contains(steps.oci_output.outputs.log_data, 'Out of host capacity') && 'Waiting for capacity.' || 'Error.' }}
+
+            **Details:**
+            ```json
+            ${{ steps.oci_output.outputs.log_data }}
+            ```
