@@ -73,6 +73,26 @@ jobs:
           done
 
           OCI_CLI_REGION="$(printf '%s' "$OCI_CLI_REGION" | tr -d '[:space:]')"
+          case "$OCI_CLI_REGION" in
+            USWest\(Phoenix\)|USWestPhoenix|Phoenix)
+              OCI_CLI_REGION="us-phoenix-1"
+              ;;
+            USEast\(Ashburn\)|USEastAshburn|Ashburn)
+              OCI_CLI_REGION="us-ashburn-1"
+              ;;
+            USWest\(SanJose\)|USWestSanJose|SanJose)
+              OCI_CLI_REGION="us-sanjose-1"
+              ;;
+          esac
+
+          if ! grep -Eq '^[a-z]+-[a-z]+-[0-9]+$' <<< "$OCI_CLI_REGION"; then
+            {
+              echo "Invalid OCI_CLI_REGION: ${OCI_CLI_REGION}"
+              echo "Use an OCI region identifier such as us-phoenix-1, not the console display name."
+            } > "$RUNNER_TEMP/oci-error.log"
+            exit 1
+          fi
+
           COMPUTE_ENDPOINT="https://iaas.${OCI_CLI_REGION}.oraclecloud.com/20160918"
 
           mkdir -p "$HOME/.oci"
