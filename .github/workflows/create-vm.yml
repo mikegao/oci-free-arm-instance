@@ -94,6 +94,31 @@ jobs:
           fi
 
           COMPUTE_ENDPOINT="https://iaas.${OCI_CLI_REGION}.oraclecloud.com/20160918"
+          REGION_KEY="$(printf '%s' "$OCI_CLI_REGION" | sed -E 's/^([a-z]+)-([a-z]+)-([0-9]+)$/\1.\2.\3/')"
+
+          if ! grep -Eq '^[[:alnum:]]+:[[:upper:][:digit:]-]+-AD-[[:digit:]]+$' <<< "$AD_NAME"; then
+            {
+              echo "Invalid AD_NAME: ${AD_NAME}"
+              echo "Use the full availability domain name, for example AbCd:PHX-AD-1."
+            } > "$RUNNER_TEMP/oci-error.log"
+            exit 1
+          fi
+
+          if ! grep -Eq "^ocid1\\.subnet\\.oc1\\.${REGION_KEY}\\." <<< "$OCI_SUBNET_ID"; then
+            {
+              echo "OCI_SUBNET_ID does not match region ${OCI_CLI_REGION}."
+              echo "Expected subnet OCID prefix: ocid1.subnet.oc1.${REGION_KEY}."
+            } > "$RUNNER_TEMP/oci-error.log"
+            exit 1
+          fi
+
+          if ! grep -Eq "^ocid1\\.image\\.oc1\\.${REGION_KEY}\\." <<< "$IMAGE_ID"; then
+            {
+              echo "IMAGE_ID does not match region ${OCI_CLI_REGION}."
+              echo "Expected image OCID prefix: ocid1.image.oc1.${REGION_KEY}."
+            } > "$RUNNER_TEMP/oci-error.log"
+            exit 1
+          fi
 
           mkdir -p "$HOME/.oci"
           chmod 700 "$HOME/.oci"
