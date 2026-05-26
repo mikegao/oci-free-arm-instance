@@ -6,6 +6,8 @@ on:
       - main
     paths:
       - ".github/workflows/create-vm.yml"
+  schedule:
+    - cron: "3,13,23,33,43,53 * * * *"
   workflow_dispatch:
 
 concurrency:
@@ -20,10 +22,6 @@ env:
 jobs:
   create-vm:
     runs-on: ubuntu-latest
-    timeout-minutes: 360
-    env:
-      MAX_ATTEMPTS: 30
-      RETRY_SLEEP_SECONDS: 600
     steps:
       - name: Cache OCI CLI
         uses: actions/cache@v4
@@ -233,12 +231,12 @@ jobs:
             exit 1
           fi
 
-          for attempt in $(seq 1 "$MAX_ATTEMPTS"); do
+          for attempt in 1 2 3; do
             {
-              echo "OCI launch attempt ${attempt}/${MAX_ATTEMPTS}"
+              echo "OCI launch attempt ${attempt}"
               echo "Compute endpoint: ${COMPUTE_ENDPOINT}"
               curl --connect-timeout 10 --max-time 20 --silent --show-error --head "$COMPUTE_ENDPOINT" || true
-            } | tee "$RUNNER_TEMP/oci-error.log"
+            } > "$RUNNER_TEMP/oci-error.log"
 
             oci \
               --config-file "$HOME/.oci/config" \
@@ -258,7 +256,7 @@ jobs:
               --display-name "luckyowl-vm" \
               --boot-volume-size-in-gbs 200 \
               > "$RUNNER_TEMP/oci-output.json" \
-              2> >(tee -a "$RUNNER_TEMP/oci-error.log" >&2)
+              2>> "$RUNNER_TEMP/oci-error.log"
 
             exit_code=$?
             if [ "$exit_code" -eq 0 ]; then
@@ -266,18 +264,11 @@ jobs:
             fi
 
             if grep -q 'Out of host capacity' "$RUNNER_TEMP/oci-error.log"; then
-              if [ "$attempt" -eq "$MAX_ATTEMPTS" ]; then
-                echo "Reached max attempts. Capacity is still unavailable." | tee -a "$RUNNER_TEMP/oci-error.log"
-                exit 0
-              fi
-
-              echo "Capacity unavailable. Retrying in ${RETRY_SLEEP_SECONDS} seconds..." | tee -a "$RUNNER_TEMP/oci-error.log"
-              sleep "$RETRY_SLEEP_SECONDS"
-              continue
+              exit 0
             fi
 
             if grep -q 'timed out' "$RUNNER_TEMP/oci-error.log"; then
-              if [ "$attempt" -eq "$MAX_ATTEMPTS" ]; then
+              if [ "$attempt" -eq 3 ]; then
                 echo "Reached max attempts after repeated timeouts." | tee -a "$RUNNER_TEMP/oci-error.log"
                 exit "$exit_code"
               fi
@@ -322,7 +313,7 @@ jobs:
           fi
 
           if grep -q 'Out of host capacity' <<< "$LOG_DATA"; then
-            echo "OCI has no Arm capacity right now. Run workflow again if this long retry job has ended."
+            echo "OCI has no Arm capacity right now. The next cron run will retry."
             exit 0
           fi
 
