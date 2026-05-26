@@ -15,7 +15,6 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
   OCI_CLI_SUPPRESS_FILE_PERMISSIONS_WARNING: "True"
   SUPPRESS_LABEL_WARNING: "True"
   PYTHONWARNINGS: "ignore::FutureWarning"
@@ -24,12 +23,6 @@ jobs:
   create-vm:
     runs-on: ubuntu-latest
     steps:
-      - name: Cache OCI CLI
-        uses: actions/cache@v4
-        with:
-          path: ~/.local
-          key: ${{ runner.os }}-pip-oci-cli-v1
-
       - name: Add OCI CLI to PATH
         run: echo "$HOME/.local/bin" >> "$GITHUB_PATH"
 
@@ -323,16 +316,57 @@ jobs:
 
       - name: Send Discord notification
         if: always()
-        uses: sarisia/actions-status-discord@v1.15.4
-        with:
-          webhook: ${{ secrets.DISCORD_WEBHOOK_URL }}
-          color: ${{ contains(steps.oci_output.outputs.log_data, 'PROVISIONING') && '0x28a745' || contains(steps.oci_output.outputs.log_data, 'Out of host capacity') && '0xffa500' || '0xdc3545' }}
-          title: OCI Bot Status
-          description: |
-            **Result:**
-            ${{ contains(steps.oci_output.outputs.log_data, 'PROVISIONING') && 'VM created. Disable this workflow.' || contains(steps.oci_output.outputs.log_data, 'Out of host capacity') && 'Waiting for capacity.' || 'Error.' }}
+        shell: bash
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          LOG_DATA: ${{ steps.oci_output.outputs.log_data }}
+        run: |
+          if [ -z "$DISCORD_WEBHOOK_URL" ]; then
+            echo "DISCORD_WEBHOOK_URL is not set. Skipping notification."
+            exit 0
+          fi
 
-            **Details:**
-            ```json
-            ${{ steps.oci_output.outputs.log_data }}
-            ```
+          if grep -q 'PROVISIONING' <<< "$LOG_DATA"; then
+            RESULT="VM created. Disable this workflow."
+            COLOR=2664261
+          elif grep -q 'Out of host capacity' <<< "$LOG_DATA"; then
+            RESULT="Waiting for capacity."
+            COLOR=16753920
+          else
+            RESULT="Error."
+            COLOR=14431557
+          fi
+          export RESULT COLOR
+
+          python3 - <<'PY' > "$RUNNER_TEMP/discord-payload.json"
+          import json
+          import os
+
+          log_data = os.environ.get("LOG_DATA", "")
+          if len(log_data) > 3500:
+              log_data = log_data[-3500:]
+
+          payload = {
+              "embeds": [
+                  {
+                      "title": "OCI Bot Status",
+                      "color": int(os.environ["COLOR"]),
+                      "description": (
+                          "**Result:**\n"
+                          f"{os.environ['RESULT']}\n\n"
+                          "**Details:**\n"
+                          f"```json\n{log_data}\n```"
+                      ),
+                  }
+              ]
+          }
+          print(json.dumps(payload))
+          PY
+
+          curl \
+            --fail \
+            --silent \
+            --show-error \
+            -H "Content-Type: application/json" \
+            --data @"$RUNNER_TEMP/discord-payload.json" \
+            "$DISCORD_WEBHOOK_URL"
